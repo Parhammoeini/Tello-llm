@@ -21,7 +21,12 @@ except ImportError:
 if not OPENAI_API_KEY:
     raise ValueError("❌ OPENAI_API_KEY not found! Run 'export OPENAI_API_KEY=your_key' in terminal.")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+#client = OpenAI(api_key=OPENAI_API_KEY)
+
+client = OpenAI(
+    base_url='http://localhost:11434/v1',
+    api_key='ollama', 
+)
 
 def frame_to_base64(frame) -> str:
     """Optimizes and converts CV2 frame to Base64 for the LLM."""
@@ -34,53 +39,79 @@ def frame_to_base64(frame) -> str:
     _, buffer = cv2.imencode('.jpg', resized, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return base64.b64encode(buffer).decode('utf-8')
 
-def analyze_frame(frame, goal: str, telemetry: dict) -> dict:
-    """Sends frame and telemetry to LLM and returns a structured dictionary."""
-    img_b64 = frame_to_base64(frame)
+#def analyze_frame(frame, goal: str, telemetry: dict) -> dict:
+#    """Sends frame and telemetry to LLM and returns a structured dictionary."""
+#    img_b64 = frame_to_base64(frame)
+#
+ #   try:
+  #      response = client.chat.completions.create(
+   #         model=VISION_MODEL,
+    #        response_format={"type": "json_object"},
+     #       messages=[
+      #          {
+       #             "role": "system",
+        #            "content": "You are the vision system of an autonomous Tello drone. Respond ONLY in valid JSON."
+         #       },
+          #      {
+           #         "role": "user",
+            #        "content": [
+             #           {
+              #              "type": "image_url",
+               #             "image_url": {
+                #                "url": f"data:image/jpeg;base64,{img_b64}",
+                 #               "detail": "low" 
+                  #          }
+                   #     },
+                    #    {
+  #                          "type": "text",
+   #                         "text": f"Goal: {goal}\nTelemetry: {json.dumps(telemetry)}\n\nReturn JSON: {{'scene': str, 'obstacles': list, 'points_of_interest': list, 'suggestion': str, 'confidence': float}}"
+    #                    }
+     #               ]
+      #          }
+       #     ],
+       #     max_tokens=400
+        #)
+
+       # content = response.choices[0].message.content.strip()
+        
+        # Guard against markdown backticks
+        #if content.startswith("```"):
+         #   content = content.split("json")[-1].replace("```", "").strip()
+            
+        #return json.loads(content)
+
+#    except Exception as e:
+  #      log.error(f"Vision Analysis Failed: {e}")
+   #     return {
+    #        "scene": "error",
+     #       "obstacles": [],
+      #      "points_of_interest": [],
+       #     "suggestion": "hover",
+        #    "confidence": 0.0
+        #}
+
+def analyze_frame(frame, goal, telemetry):
+    # 1. Convert the OpenCV frame to Base64 for Ollama
+    _, buffer = cv2.imencode('.jpg', frame)
+    base64_image = base64.b64encode(buffer).decode('utf-8')
 
     try:
         response = client.chat.completions.create(
-            model=VISION_MODEL,
-            response_format={"type": "json_object"},
+            model="moondream",
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are the vision system of an autonomous Tello drone. Respond ONLY in valid JSON."
-                },
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{img_b64}",
-                                "detail": "low" 
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": f"Goal: {goal}\nTelemetry: {json.dumps(telemetry)}\n\nReturn JSON: {{'scene': str, 'obstacles': list, 'points_of_interest': list, 'suggestion': str, 'confidence': float}}"
-                        }
-                    ]
+                        {"type": "text", "text": f"Context: Drone mission for {goal}. Describe what you see in the center of the frame and if it relates to the goal."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ],
                 }
             ],
-            max_tokens=400
+            max_tokens=100
         )
-
-        content = response.choices[0].message.content.strip()
-        
-        # Guard against markdown backticks
-        if content.startswith("```"):
-            content = content.split("json")[-1].replace("```", "").strip()
-            
-        return json.loads(content)
-
+        # Parse the response (Ollama returns standard OpenAI format)
+        description = response.choices[0].message.content
+        return {"scene": description, "suggestion": "continue"}
     except Exception as e:
-        log.error(f"Vision Analysis Failed: {e}")
-        return {
-            "scene": "error",
-            "obstacles": [],
-            "points_of_interest": [],
-            "suggestion": "hover",
-            "confidence": 0.0
-        }
+        print(f"Ollama Vision Error: {e}")
+        return {"scene": "error", "suggestion": "hover"}

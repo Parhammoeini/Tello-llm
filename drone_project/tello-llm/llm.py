@@ -15,7 +15,11 @@ except Exception:
 if not OPENAI_API_KEY:
     raise ValueError("❌ OPENAI_API_KEY missing")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+#client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(
+    base_url='http://localhost:11434/v1',
+    api_key='ollama', 
+)
 
 SYSTEM_PROMPT = """
 You are an autonomous drone pilot. Commands are RELATIVE to current position.
@@ -49,7 +53,7 @@ def plan_next_commands(goal: str, telemetry: dict, vision: dict) -> list:
     print(json.dumps(payload, indent=2))
 
     response = client.chat.completions.create(
-        model=PLANNER_MODEL,
+        model="llama3.2:1b",
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
